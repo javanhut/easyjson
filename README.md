@@ -96,7 +96,6 @@ func main() {
         fmt.Printf("Admin: %s\n", admin.GetString("name"))
     }
     
-<<<<<<< HEAD
     // Filter active users
     activeUsers := users.FilterArray(func(user *easyjson.JSONValue) bool {
         return user.GetBool("active", false)
@@ -135,8 +134,6 @@ jsonStr, err := data.Dumps()
 jsonStr, err := data.DumpsIndent("  ")
 ```
 
-<<<<<<< HEAD
-=======
 ### File Operations
 
 ```go
@@ -191,7 +188,6 @@ hairColor := data.Get("users").Get(0).Get("profile").Get("hair_color").AsString(
 value := data.Get("key")
 firstItem := data.Get(0)
 
-<<<<<<< HEAD
 // Fluent query syntax - most Python-like approach
 hairColor := data.Q("users", 0, "profile", "hair_color").AsString()
 age := data.Q("users", 0, "age").AsInt()
@@ -271,7 +267,6 @@ obj := data.AsObject()    // Returns empty map for non-objects
 ### Smart Getters with Defaults
 
 ```go
-<<<<<<< HEAD
 // No more verbose nil checking!
 // Before:
 name := data.Get("user").Get("name").AsString()
@@ -929,7 +924,6 @@ go test -cover
 
 This project is licensed under the MIT License - see the LICENSE file for details.
 
-<<<<<<< HEAD
 ## Why Choose EasyJSON?
 
 | Feature | Standard Go | Other Libraries | EasyJSON |
