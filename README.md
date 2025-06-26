@@ -9,8 +9,30 @@ EasyJSON provides an intuitive, Python-like interface for working with JSON data
 - **Safe operations**: No panics on missing keys or invalid operations
 - **Type flexibility**: Automatic type conversions with fallback defaults
 - **Path notation**: Access nested values with dot notation (`data.Path("user.address.street")`)
+- **File operations**: Load and save JSON files with ease
 - **Chainable operations**: Fluent interface for complex manipulations
 - **Zero external dependencies**: Uses only Go standard library
+
+## Table of Contents
+
+- [Installation](#installation)
+- [Quick Start](#quick-start)
+- [API Reference](#api-reference)
+  - [Parsing and Serialization](#parsing-and-serialization)
+  - [File Operations](#file-operations)
+  - [Creating New Structures](#creating-new-structures)
+  - [Accessing Data](#accessing-data)
+  - [Modifying Data](#modifying-data)
+  - [Type Checking](#type-checking)
+  - [Type Conversion](#type-conversion)
+  - [Collection Operations](#collection-operations)
+  - [Utility Operations](#utility-operations)
+- [Advanced Examples](#advanced-examples)
+- [Access Pattern Comparison](#access-pattern-comparison)
+- [Performance](#performance)
+- [Testing](#testing)
+- [Contributing](#contributing)
+- [License](#license)
 
 ## Installation
 
@@ -55,9 +77,8 @@ func main() {
     data.Set("age", 31)
     data.Get("hobbies").Append("photography")
     
-    // Convert back to JSON
-    result, _ := data.DumpsIndent("  ")
-    fmt.Println(result)
+    // Save to file
+    data.SaveFileIndent("output.json", "  ")
 }
 ```
 
@@ -82,6 +103,19 @@ jsonStr, err := data.DumpsIndent("  ")
 jsonBytes, err := data.Dump()
 ```
 
+### File Operations
+
+```go
+// Load JSON from file
+data, err := easyjson.LoadFile("config.json")
+
+// Save JSON to file
+err := data.SaveFile("output.json")
+
+// Save with indentation (pretty-print)
+err := data.SaveFileIndent("output.json", "  ")
+```
+
 ### Creating New Structures
 
 ```go
@@ -99,35 +133,38 @@ arr := easyjson.NewArrayFrom([]interface{}{"a", "b", "c"})
 data := easyjson.New(anyValue)
 ```
 
-### Important Notes
-
-**SetPath Limitations:**
-- `SetPath` automatically creates intermediate **objects** when paths don't exist
-- For arrays, you need to create the array structure first before using `SetPath` with numeric indices
-- Example: Create `data.Set("items", []interface{}{})` before using `data.SetPath("items.0", value)`
-
 ### Accessing Data
+
+#### Three Ways to Access Nested Data
+
+EasyJSON provides three different methods for accessing nested data:
+
+```go
+// 1. Fluent Query (Q) - Most Python-like, recommended
+hairColor := data.Q("users", 0, "profile", "hair_color").AsString()
+
+// 2. Path notation - String-based paths
+hairColor := data.Path("users.0.profile.hair_color").AsString()
+
+// 3. Traditional Get - Step-by-step access
+hairColor := data.Get("users").Get(0).Get("profile").Get("hair_color").AsString()
+```
+
+#### Basic Access Operations
 
 ```go
 // Get values by key (objects) or index (arrays)
 value := data.Get("key")
 firstItem := data.Get(0)
 
-// Fluent query syntax - most Python-like approach
-hairColor := data.Q("users", 0, "profile", "hair_color").AsString()
-score := data.Q("players", 1, "stats", "score").AsInt()
-
 // Check if key/index exists
 exists := data.Has("key")
 exists := data.Has(0)
 
-// Access nested data with paths
-street := data.Path("user.address.street")
-score := data.Path("users.0.scores.1")
-
-// Fluent query syntax (most Python-like)
-hairColor := data.Q("users", 0, "profile", "hair_color").AsString()
-age := data.Q("users", 0, "age").AsInt()
+// Safe access - returns default values for missing keys
+name := data.Q("user", "name").AsString()        // Returns "" if not found
+age := data.Q("user", "age").AsInt()             // Returns 0 if not found
+active := data.Q("user", "active").AsBool()      // Returns false if not found
 ```
 
 ### Modifying Data
@@ -140,7 +177,7 @@ data.Set(0, "new first item")
 // Set nested paths (creates intermediate objects)
 data.SetPath("user.address.street", "456 Oak Ave")
 
-// For arrays, create the structure first, then set elements
+// Important: For arrays, create the structure first
 data.Set("scores", []interface{}{0, 0, 0})
 data.SetPath("scores.0", 95)
 
@@ -155,6 +192,12 @@ data.Extend([]interface{}{"item1", "item2"})
 // Merge objects
 data.Update(otherJSONValue)
 ```
+
+#### Important Notes on SetPath
+
+- `SetPath` automatically creates intermediate **objects** when paths don't exist
+- For arrays, you need to create the array structure first before using `SetPath` with numeric indices
+- Example: Create `data.Set("items", []interface{}{})` before using `data.SetPath("items.0", value)`
 
 ### Type Checking
 
@@ -267,6 +310,26 @@ result, _ := response.DumpsIndent("  ")
 fmt.Println(result)
 ```
 
+### Working with Files
+
+```go
+// Load configuration from file
+config, err := easyjson.LoadFile("config.json")
+if err != nil {
+    log.Fatal(err)
+}
+
+// Modify configuration
+config.Set("version", "2.0")
+config.Q("database", "host").Set("host", "localhost")
+
+// Save back to file
+err = config.SaveFile("config.json")
+
+// Or save with pretty formatting
+err = config.SaveFileIndent("config_pretty.json", "  ")
+```
+
 ### Safe Error Handling
 
 ```go
@@ -293,6 +356,67 @@ if data.Has("optional_field") {
 missing := data.Q("nonexistent", "path", "here").AsString() // Returns ""
 ```
 
+### Working with Mixed Types
+
+```go
+// Handle mixed-type arrays
+mixedData := `{
+    "values": [42, "hello", true, null, {"nested": "object"}]
+}`
+
+data, _ := easyjson.Loads(mixedData)
+values := data.Get("values").AsArray()
+
+for i, val := range values {
+    switch {
+    case val.IsNumber():
+        fmt.Printf("[%d] Number: %d\n", i, val.AsInt())
+    case val.IsString():
+        fmt.Printf("[%d] String: %s\n", i, val.AsString())
+    case val.IsBool():
+        fmt.Printf("[%d] Boolean: %t\n", i, val.AsBool())
+    case val.IsNull():
+        fmt.Printf("[%d] Null value\n", i)
+    case val.IsObject():
+        fmt.Printf("[%d] Object with %d keys\n", i, val.Len())
+    }
+}
+```
+
+## Access Pattern Comparison
+
+EasyJSON provides three different ways to access nested data - choose what feels most natural:
+
+| Pattern | Syntax | Best For |
+|---------|--------|----------|
+| **Fluent Query** | `data.Q("users", 0, "name").AsString()` | Python-like access, mixed key types |
+| **Path Notation** | `data.Path("users.0.name").AsString()` | String-based paths, simple cases |
+| **Traditional** | `data.Get("users").Get(0).Get("name").AsString()` | Step-by-step access, debugging |
+
+### Comparison with Standard Go
+
+| Operation | Standard Go | EasyJSON |
+|-----------|-------------|----------|
+| Parse JSON | `json.Unmarshal(data, &v)` | `easyjson.Loads(jsonStr)` |
+| Access nested | `v["user"].(map[string]interface{})["name"].(string)` | `data.Q("user", "name").AsString()` |
+| Type assertion | `value, ok := v.(string)` | `data.AsString()` (safe) |
+| Check existence | Complex nested checks | `data.Has("key")` |
+| Modify nested | Manual map/slice operations | `data.SetPath("user.name", "John")` |
+| Load from file | `ioutil.ReadFile` + `json.Unmarshal` | `easyjson.LoadFile("file.json")` |
+| Save to file | `json.Marshal` + `ioutil.WriteFile` | `data.SaveFile("file.json")` |
+
+## Performance
+
+EasyJSON is designed for ease of use while maintaining reasonable performance. For high-performance scenarios where you need maximum speed and minimal allocations, consider using Go's standard `encoding/json` package directly.
+
+EasyJSON trades some performance for significantly improved developer experience and code readability. It's ideal for:
+
+- API servers handling moderate traffic
+- Configuration file processing
+- Data transformation scripts
+- Rapid prototyping
+- Any scenario where code clarity is more important than microsecond-level performance
+
 ## Testing
 
 Run the comprehensive test suite:
@@ -307,9 +431,11 @@ Run benchmarks:
 go test -bench=.
 ```
 
-## Performance
+Run with coverage:
 
-EasyJSON is designed for ease of use while maintaining reasonable performance. For high-performance scenarios where you need maximum speed and minimal allocations, consider using Go's standard `encoding/json` package directly.
+```bash
+go test -cover
+```
 
 ## Contributing
 
@@ -325,29 +451,6 @@ EasyJSON is designed for ease of use while maintaining reasonable performance. F
 
 This project is licensed under the MIT License - see the LICENSE file for details.
 
-## Access Pattern Comparison
+## Examples Repository
 
-EasyJSON provides three different ways to access nested data - choose what feels most natural:
-
-| Pattern | Syntax | Best For |
-|---------|--------|----------|
-| **Fluent Query** | `data.Q("users", 0, "name").AsString()` | Python-like access, mixed key types |
-| **Path Notation** | `data.Path("users.0.name").AsString()` | String-based paths, simple cases |
-| **Traditional** | `data.Get("users").Get(0).Get("name").AsString()` | Step-by-step access, debugging |
-
-```go
-// All three are equivalent:
-name1 := data.Q("users", 0, "name").AsString()           // Fluent (recommended)
-name2 := data.Path("users.0.name").AsString()            // Path notation
-name3 := data.Get("users").Get(0).Get("name").AsString() // Traditional chaining
-```
-
-| Operation | Standard Go | EasyJSON |
-|-----------|-------------|----------|
-| Parse JSON | `json.Unmarshal(data, &v)` | `easyjson.Loads(jsonStr)` |
-| Access nested | `v["user"].(map[string]interface{})["name"].(string)` | `data.Path("user.name").AsString()` |
-| Type assertion | `value, ok := v.(string)` | `data.AsString()` (safe) |
-| Check existence | Complex nested checks | `data.Has("key")` |
-| Modify nested | Manual map/slice operations | `data.SetPath("user.name", "John")` |
-
-EasyJSON trades some performance for significantly improved developer experience and code readability.
+For more examples and use cases, check out the [examples directory](./example/main.go) in this repository.

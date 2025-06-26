@@ -3,6 +3,7 @@ package easyjson
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"strconv"
 	"strings"
 )
@@ -50,6 +51,15 @@ func Load(jsonBytes []byte) (*JSONValue, error) {
 	return &JSONValue{data: data}, nil
 }
 
+// LoadFile reads and parses JSON from a file
+func LoadFile(filename string) (*JSONValue, error) {
+	data, err := os.ReadFile(filename)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read file %s: %w", filename, err)
+	}
+	return Load(data)
+}
+
 // Dumps converts the JSONValue to a JSON string
 func (jv *JSONValue) Dumps() (string, error) {
 	bytes, err := json.Marshal(jv.data)
@@ -71,6 +81,32 @@ func (jv *JSONValue) DumpsIndent(indent string) (string, error) {
 // Dump converts the JSONValue to JSON bytes
 func (jv *JSONValue) Dump() ([]byte, error) {
 	return json.Marshal(jv.data)
+}
+
+// SaveFile writes the JSONValue to a file as JSON
+func (jv *JSONValue) SaveFile(filename string) error {
+	data, err := jv.Dump()
+	if err != nil {
+		return fmt.Errorf("failed to marshal JSON: %w", err)
+	}
+	err = os.WriteFile(filename, data, 0644)
+	if err != nil {
+		return fmt.Errorf("failed to write file %s: %w", filename, err)
+	}
+	return nil
+}
+
+// SaveFileIndent writes the JSONValue to a file as pretty-printed JSON
+func (jv *JSONValue) SaveFileIndent(filename string, indent string) error {
+	data, err := json.MarshalIndent(jv.data, "", indent)
+	if err != nil {
+		return fmt.Errorf("failed to marshal JSON: %w", err)
+	}
+	err = os.WriteFile(filename, data, 0644)
+	if err != nil {
+		return fmt.Errorf("failed to write file %s: %w", filename, err)
+	}
+	return nil
 }
 
 // Get retrieves a value by key (for objects) or index (for arrays)

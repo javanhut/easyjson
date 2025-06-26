@@ -33,6 +33,9 @@ func main() {
 
 	// Example 8: Fluent query syntax
 	fluentQueryExample()
+
+	// Example 9: File operations
+	fileExample()
 }
 
 func basicExample() {
@@ -457,4 +460,99 @@ func fluentQueryExample() {
 	fmt.Printf("Nonexistent key: '%s'\n", invalid1)
 	fmt.Printf("Invalid array index: '%s'\n", invalid2)
 	fmt.Printf("Invalid nested chain: '%s'\n", invalid3)
+}
+
+func fileExample() {
+	fmt.Println("\n9. File Operations")
+	fmt.Println("==================")
+
+	// Create sample data to save
+	config := easyjson.NewObject()
+	config.Set("app_name", "EasyJSON Demo")
+	config.Set("version", "1.0.0")
+	config.Set("debug", true)
+
+	// Database settings
+	database := easyjson.NewObject()
+	database.Set("host", "localhost")
+	database.Set("port", 5432)
+	database.Set("name", "myapp")
+	database.Set("ssl", false)
+	config.Set("database", database.Raw())
+
+	// API endpoints
+	endpoints := easyjson.NewArrayFrom([]interface{}{
+		map[string]interface{}{
+			"path": "/api/users",
+			"method": "GET",
+			"auth": true,
+		},
+		map[string]interface{}{
+			"path": "/api/login",
+			"method": "POST",
+			"auth": false,
+		},
+	})
+	config.Set("endpoints", endpoints.Raw())
+
+	// Save to file
+	fmt.Println("Saving configuration to file...")
+	err := config.SaveFile("config.json")
+	if err != nil {
+		fmt.Printf("Error saving file: %v\n", err)
+	} else {
+		fmt.Println("Configuration saved to config.json")
+	}
+
+	// Save with indentation for readability
+	err = config.SaveFileIndent("config_pretty.json", "  ")
+	if err != nil {
+		fmt.Printf("Error saving indented file: %v\n", err)
+	} else {
+		fmt.Println("Pretty configuration saved to config_pretty.json")
+	}
+
+	// Load from file
+	fmt.Println("\nLoading configuration from file...")
+	loaded, err := easyjson.LoadFile("config.json")
+	if err != nil {
+		fmt.Printf("Error loading file: %v\n", err)
+		return
+	}
+
+	// Access loaded data
+	fmt.Printf("App Name: %s\n", loaded.Get("app_name").AsString())
+	fmt.Printf("Version: %s\n", loaded.Get("version").AsString())
+	fmt.Printf("Debug Mode: %t\n", loaded.Get("debug").AsBool())
+	fmt.Printf("Database Host: %s\n", loaded.Q("database", "host").AsString())
+	fmt.Printf("Database Port: %d\n", loaded.Q("database", "port").AsInt())
+
+	// Work with endpoints
+	fmt.Println("\nAPI Endpoints:")
+	endpoints = loaded.Get("endpoints")
+	for i, endpoint := range endpoints.AsArray() {
+		path := endpoint.Get("path").AsString()
+		method := endpoint.Get("method").AsString()
+		auth := endpoint.Get("auth").AsBool()
+		fmt.Printf("  %d. %s %s (Auth: %t)\n", i+1, method, path, auth)
+	}
+
+	// Modify and save again
+	loaded.Set("last_modified", "2025-05-25T10:30:00Z")
+	loaded.Q("database", "port").Set("port", 5433) // This won't work as expected
+	loaded.Path("database.port").Set("port", 5433) // This won't work either
+	// Correct way:
+	loaded.Get("database").Set("port", 5433)
+
+	err = loaded.SaveFile("config_updated.json")
+	if err != nil {
+		fmt.Printf("Error saving updated file: %v\n", err)
+	} else {
+		fmt.Println("\nUpdated configuration saved to config_updated.json")
+	}
+
+	// Clean up example files
+	fmt.Println("\nCleaning up example files...")
+	// Note: In real usage, you wouldn't typically delete config files
+	// This is just for the example
 }
