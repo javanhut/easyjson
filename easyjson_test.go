@@ -2,6 +2,8 @@ package easyjson
 
 import (
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -683,5 +685,206 @@ func BenchmarkPath(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		_ = jv.Path("user.address.street")
+	}
+}
+
+func TestLoadFile(t *testing.T) {
+	// Create a temporary test file
+	tmpDir := t.TempDir()
+	testFile := filepath.Join(tmpDir, "test.json")
+	
+	testData := map[string]interface{}{
+		"name": "Test User",
+		"age": 42,
+		"active": true,
+		"items": []interface{}{"item1", "item2", "item3"},
+	}
+	
+	// Write test data to file
+	testJSON, err := json.Marshal(testData)
+	if err != nil {
+		t.Fatalf("Failed to marshal test data: %v", err)
+	}
+	
+	err = os.WriteFile(testFile, testJSON, 0644)
+	if err != nil {
+		t.Fatalf("Failed to write test file: %v", err)
+	}
+	
+	// Test LoadFile
+	jv, err := LoadFile(testFile)
+	if err != nil {
+		t.Fatalf("LoadFile failed: %v", err)
+	}
+	
+	// Verify loaded data
+	if jv.Get("name").AsString() != "Test User" {
+		t.Errorf("Expected 'Test User', got '%s'", jv.Get("name").AsString())
+	}
+	
+	if jv.Get("age").AsInt() != 42 {
+		t.Errorf("Expected 42, got %d", jv.Get("age").AsInt())
+	}
+	
+	if !jv.Get("active").AsBool() {
+		t.Error("Expected active to be true")
+	}
+	
+	items := jv.Get("items").AsArray()
+	if len(items) != 3 {
+		t.Errorf("Expected 3 items, got %d", len(items))
+	}
+}
+
+func TestLoadFileError(t *testing.T) {
+	// Test loading non-existent file
+	_, err := LoadFile("/non/existent/file.json")
+	if err == nil {
+		t.Error("Expected error for non-existent file, got nil")
+	}
+	
+	// Test loading invalid JSON file
+	tmpDir := t.TempDir()
+	invalidFile := filepath.Join(tmpDir, "invalid.json")
+	
+	err = os.WriteFile(invalidFile, []byte("invalid json content"), 0644)
+	if err != nil {
+		t.Fatalf("Failed to write invalid test file: %v", err)
+	}
+	
+	_, err = LoadFile(invalidFile)
+	if err == nil {
+		t.Error("Expected error for invalid JSON file, got nil")
+	}
+}
+
+func TestSaveFile(t *testing.T) {
+	// Create test data
+	data := map[string]interface{}{
+		"user": "Alice",
+		"score": 95,
+		"tags": []interface{}{"tag1", "tag2"},
+	}
+	jv := New(data)
+	
+	// Save to file
+	tmpDir := t.TempDir()
+	outputFile := filepath.Join(tmpDir, "output.json")
+	
+	err := jv.SaveFile(outputFile)
+	if err != nil {
+		t.Fatalf("SaveFile failed: %v", err)
+	}
+	
+	// Verify file exists
+	if _, err := os.Stat(outputFile); os.IsNotExist(err) {
+		t.Error("Output file was not created")
+	}
+	
+	// Load and verify content
+	loaded, err := LoadFile(outputFile)
+	if err != nil {
+		t.Fatalf("Failed to load saved file: %v", err)
+	}
+	
+	if loaded.Get("user").AsString() != "Alice" {
+		t.Error("Saved data doesn't match original")
+	}
+	
+	if loaded.Get("score").AsInt() != 95 {
+		t.Error("Saved score doesn't match original")
+	}
+}
+
+func TestSaveFileIndent(t *testing.T) {
+	// Create test data
+	data := map[string]interface{}{
+		"name": "Bob",
+		"nested": map[string]interface{}{
+			"key1": "value1",
+			"key2": "value2",
+		},
+	}
+	jv := New(data)
+	
+	// Save with indentation
+	tmpDir := t.TempDir()
+	outputFile := filepath.Join(tmpDir, "output_indent.json")
+	
+	err := jv.SaveFileIndent(outputFile, "  ")
+	if err != nil {
+		t.Fatalf("SaveFileIndent failed: %v", err)
+	}
+	
+	// Read file content
+	content, err := os.ReadFile(outputFile)
+	if err != nil {
+		t.Fatalf("Failed to read saved file: %v", err)
+	}
+	
+	// Check for indentation
+	if !strings.Contains(string(content), "  ") {
+		t.Error("Saved file should contain indentation")
+	}
+	
+	// Verify content can be loaded back
+	loaded, err := LoadFile(outputFile)
+	if err != nil {
+		t.Fatalf("Failed to load indented file: %v", err)
+	}
+	
+	if loaded.Get("name").AsString() != "Bob" {
+		t.Error("Saved data doesn't match original")
+	}
+}
+
+func TestSaveFileError(t *testing.T) {
+	// Test saving to invalid path
+	jv := New(map[string]interface{}{"test": "data"})
+	
+	err := jv.SaveFile("/invalid/path/that/does/not/exist/file.json")
+	if err == nil {
+		t.Error("Expected error for invalid path, got nil")
+	}
+}
+
+func TestFileRoundTrip(t *testing.T) {
+	// Complex data for round-trip test
+	complexData := map[string]interface{}{
+		"string": "hello world",
+		"number": 123.45,
+		"boolean": true,
+		"null": nil,
+		"array": []interface{}{1, 2, 3, "four", true},
+		"object": map[string]interface{}{
+			"nested": map[string]interface{}{
+				"deep": "value",
+			},
+		},
+	}
+	
+	original := New(complexData)
+	
+	// Save to file
+	tmpDir := t.TempDir()
+	testFile := filepath.Join(tmpDir, "roundtrip.json")
+	
+	err := original.SaveFile(testFile)
+	if err != nil {
+		t.Fatalf("Failed to save file: %v", err)
+	}
+	
+	// Load from file
+	loaded, err := LoadFile(testFile)
+	if err != nil {
+		t.Fatalf("Failed to load file: %v", err)
+	}
+	
+	// Compare JSON strings to verify round-trip
+	originalJSON, _ := original.Dumps()
+	loadedJSON, _ := loaded.Dumps()
+	
+	if originalJSON != loadedJSON {
+		t.Error("Round-trip data doesn't match original")
 	}
 }

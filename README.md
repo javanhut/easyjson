@@ -2,7 +2,7 @@
 
 EasyJSON provides an intuitive, Python-like interface for working with JSON data in Go. It eliminates the complexity of type assertions and provides safe, chainable operations on JSON structures with **zero breaking changes** to existing code.
 
-## ✨ New Enhanced Features
+## ✨ Enhanced Features
 
 - **🎯 Smart Getters** - No more nil checking with built-in defaults
 - **🤖 AI-Like Suggestions** - Intelligent path completion and validation
@@ -11,6 +11,35 @@ EasyJSON provides an intuitive, Python-like interface for working with JSON data
 - **🏗️ Fluent Building** - Create complex JSON structures elegantly
 - **🔍 Multi-Path Access** - Robust handling of varying API formats
 - **🎨 Pattern Extractors** - Automatic handling of common data patterns
+- **Python-like API**: Familiar `loads()`, `dumps()`, and intuitive access patterns
+- **Fluent Query Syntax**: Chain access with `data.Q("users", 0, "profile", "hair_color")` 
+- **Safe operations**: No panics on missing keys or invalid operations
+- **Type flexibility**: Automatic type conversions with fallback defaults
+- **Path notation**: Access nested values with dot notation (`data.Path("user.address.street")`)
+- **File operations**: Load and save JSON files with ease
+- **Chainable operations**: Fluent interface for complex manipulations
+- **Zero external dependencies**: Uses only Go standard library
+
+## Table of Contents
+
+- [Installation](#installation)
+- [Quick Start](#quick-start)
+- [API Reference](#api-reference)
+  - [Parsing and Serialization](#parsing-and-serialization)
+  - [File Operations](#file-operations)
+  - [Creating New Structures](#creating-new-structures)
+  - [Accessing Data](#accessing-data)
+  - [Modifying Data](#modifying-data)
+  - [Type Checking](#type-checking)
+  - [Type Conversion](#type-conversion)
+  - [Collection Operations](#collection-operations)
+  - [Utility Operations](#utility-operations)
+- [Advanced Examples](#advanced-examples)
+- [Access Pattern Comparison](#access-pattern-comparison)
+- [Performance](#performance)
+- [Testing](#testing)
+- [Contributing](#contributing)
+- [License](#license)
 
 ## Installation
 
@@ -67,6 +96,7 @@ func main() {
         fmt.Printf("Admin: %s\n", admin.GetString("name"))
     }
     
+<<<<<<< HEAD
     // Filter active users
     activeUsers := users.FilterArray(func(user *easyjson.JSONValue) bool {
         return user.GetBool("active", false)
@@ -81,6 +111,9 @@ func main() {
     smart := easyjson.WithSuggestions(data)
     suggestions := smart.SuggestPaths()
     fmt.Printf("Available paths: %v\n", suggestions)
+    
+    // Save to file
+    data.SaveFileIndent("output.json", "  ")
 }
 ```
 
@@ -102,13 +135,63 @@ jsonStr, err := data.Dumps()
 jsonStr, err := data.DumpsIndent("  ")
 ```
 
+<<<<<<< HEAD
+=======
+### File Operations
+
+```go
+// Load JSON from file
+data, err := easyjson.LoadFile("config.json")
+
+// Save JSON to file
+err := data.SaveFile("output.json")
+
+// Save with indentation (pretty-print)
+err := data.SaveFileIndent("output.json", "  ")
+```
+
+### Creating New Structures
+
+```go
+// Create empty object
+obj := easyjson.NewObject()
+
+// Create empty array
+arr := easyjson.NewArray()
+
+// Create from existing data
+obj := easyjson.NewObjectFrom(map[string]interface{}{"key": "value"})
+arr := easyjson.NewArrayFrom([]interface{}{"a", "b", "c"})
+
+// Create from any Go value
+data := easyjson.New(anyValue)
+```
+
 ### Accessing Data
+
+#### Three Ways to Access Nested Data
+
+EasyJSON provides three different methods for accessing nested data:
+
+```go
+// 1. Fluent Query (Q) - Most Python-like, recommended
+hairColor := data.Q("users", 0, "profile", "hair_color").AsString()
+
+// 2. Path notation - String-based paths
+hairColor := data.Path("users.0.profile.hair_color").AsString()
+
+// 3. Traditional Get - Step-by-step access
+hairColor := data.Get("users").Get(0).Get("profile").Get("hair_color").AsString()
+```
+
+#### Basic Access Operations
 
 ```go
 // Get values by key (objects) or index (arrays)
 value := data.Get("key")
 firstItem := data.Get(0)
 
+<<<<<<< HEAD
 // Fluent query syntax - most Python-like approach
 hairColor := data.Q("users", 0, "profile", "hair_color").AsString()
 age := data.Q("users", 0, "age").AsInt()
@@ -119,9 +202,60 @@ score := data.Path("users.0.scores.1").AsInt()
 
 // Check if key/index exists
 exists := data.Has("key")
+exists := data.Has(0)
+
+// Safe access - returns default values for missing keys
+name := data.Q("user", "name").AsString()        // Returns "" if not found
+age := data.Q("user", "age").AsInt()             // Returns 0 if not found
+active := data.Q("user", "active").AsBool()      // Returns false if not found
+```
+
+### Modifying Data
+
+```go
+// Set values
+data.Set("key", "value")
+data.Set(0, "new first item")
+
+// Set nested paths (creates intermediate objects)
+data.SetPath("user.address.street", "456 Oak Ave")
+
+// Important: For arrays, create the structure first
+data.Set("scores", []interface{}{0, 0, 0})
+data.SetPath("scores.0", 95)
+
+// Delete keys/indices
+data.Delete("key")
+data.Delete(0)
+
+// Array operations
+data.Append("new item")
+data.Extend([]interface{}{"item1", "item2"})
+
+// Merge objects
+data.Update(otherJSONValue)
+```
+
+#### Important Notes on SetPath
+
+- `SetPath` automatically creates intermediate **objects** when paths don't exist
+- For arrays, you need to create the array structure first before using `SetPath` with numeric indices
+- Example: Create `data.Set("items", []interface{}{})` before using `data.SetPath("items.0", value)`
+
+### Type Checking
+
+```go
+if data.IsString() { /* ... */ }
+if data.IsNumber() { /* ... */ }
+if data.IsBool() { /* ... */ }
+if data.IsArray() { /* ... */ }
+if data.IsObject() { /* ... */ }
+if data.IsNull() { /* ... */ }
 ```
 
 ### Type Conversion (Safe Defaults)
+
+All conversion methods provide safe defaults for invalid conversions:
 
 ```go
 str := data.AsString()    // Returns "" for non-strings
@@ -137,14 +271,130 @@ obj := data.AsObject()    // Returns empty map for non-objects
 ### Smart Getters with Defaults
 
 ```go
+<<<<<<< HEAD
 // No more verbose nil checking!
 // Before:
 name := data.Get("user").Get("name").AsString()
+=======
+// Get all keys (for objects)
+keys := data.Keys()
+
+// Get all values
+values := data.Values()
+
+// Get key-value pairs (for objects)
+items := data.Items()
+
+// Get length
+length := data.Len()
+```
+
+### Utility Operations
+
+```go
+// Deep copy
+clone := data.Clone()
+
+// String representation
+str := data.String()
+```
+
+## Advanced Examples
+
+### Working with Complex Nested Data
+
+```go
+jsonStr := `{
+    "users": [
+        {"id": 1, "name": "Alice", "profile": {"hair_color": "Red", "age": 25}},
+        {"id": 2, "name": "Bob", "profile": {"hair_color": "Brown", "age": 30}}
+    ]
+}`
+
+data, _ := easyjson.Loads(jsonStr)
+
+// Multiple ways to access the same data:
+
+// 1. Traditional chaining
+hairColor1 := data.Get("users").Get(0).Get("profile").Get("hair_color").AsString()
+
+// 2. Path notation (dot-separated)
+hairColor2 := data.Path("users.0.profile.hair_color").AsString()
+
+// 3. Fluent query (most Python-like)
+hairColor3 := data.Q("users", 0, "profile", "hair_color").AsString()
+
+// All three return "Red"
+
+// Iterate through arrays
+users := data.Get("users").AsArray()
+for i, user := range users {
+    name := user.Q("name").AsString()
+    age := user.Q("profile", "age").AsInt()
+    fmt.Printf("User %d: %s (age %d)\n", i+1, name, age)
+}
+```
+
+### Building JSON Dynamically
+
+```go
+// Create a new object
+response := easyjson.NewObject()
+response.Set("status", "success")
+response.Set("timestamp", time.Now().Unix())
+
+// Create nested structures
+user := easyjson.NewObject()
+user.Set("id", 123)
+user.Set("name", "John Doe")
+
+// Create an array
+permissions := easyjson.NewArrayFrom([]interface{}{"read", "write"})
+user.Set("permissions", permissions.Raw())
+
+response.Set("user", user.Raw())
+
+// Convert to JSON
+result, _ := response.DumpsIndent("  ")
+fmt.Println(result)
+```
+
+### Working with Files
+
+```go
+// Load configuration from file
+config, err := easyjson.LoadFile("config.json")
+if err != nil {
+    log.Fatal(err)
+}
+
+// Modify configuration
+config.Set("version", "2.0")
+config.Q("database", "host").Set("host", "localhost")
+
+// Save back to file
+err = config.SaveFile("config.json")
+
+// Or save with pretty formatting
+err = config.SaveFileIndent("config_pretty.json", "  ")
+```
+
+### Safe Error Handling
+
+```go
+data, err := easyjson.Loads(jsonString)
+if err != nil {
+    log.Printf("JSON parsing failed: %v", err)
+    return
+}
+
+// Safe access - won't panic on missing keys
+name := data.Q("user", "name").AsString()
 if name == "" {
     name = "Anonymous"
 }
 
-// After:
+// Enhanced safe access with defaults:
 name := data.GetString("user", "name", "Anonymous")
 age := data.GetInt("user", "age", 18)
 active := data.GetBool("user", "active", true)
@@ -582,6 +832,67 @@ smart := easyjson.WithSuggestions(data)
 suggestions := smart.SuggestPaths()
 ```
 
+### Working with Mixed Types
+
+```go
+// Handle mixed-type arrays
+mixedData := `{
+    "values": [42, "hello", true, null, {"nested": "object"}]
+}`
+
+data, _ := easyjson.Loads(mixedData)
+values := data.Get("values").AsArray()
+
+for i, val := range values {
+    switch {
+    case val.IsNumber():
+        fmt.Printf("[%d] Number: %d\n", i, val.AsInt())
+    case val.IsString():
+        fmt.Printf("[%d] String: %s\n", i, val.AsString())
+    case val.IsBool():
+        fmt.Printf("[%d] Boolean: %t\n", i, val.AsBool())
+    case val.IsNull():
+        fmt.Printf("[%d] Null value\n", i)
+    case val.IsObject():
+        fmt.Printf("[%d] Object with %d keys\n", i, val.Len())
+    }
+}
+```
+
+## Access Pattern Comparison
+
+EasyJSON provides three different ways to access nested data - choose what feels most natural:
+
+| Pattern | Syntax | Best For |
+|---------|--------|----------|
+| **Fluent Query** | `data.Q("users", 0, "name").AsString()` | Python-like access, mixed key types |
+| **Path Notation** | `data.Path("users.0.name").AsString()` | String-based paths, simple cases |
+| **Traditional** | `data.Get("users").Get(0).Get("name").AsString()` | Step-by-step access, debugging |
+
+### Comparison with Standard Go
+
+| Operation | Standard Go | EasyJSON |
+|-----------|-------------|----------|
+| Parse JSON | `json.Unmarshal(data, &v)` | `easyjson.Loads(jsonStr)` |
+| Access nested | `v["user"].(map[string]interface{})["name"].(string)` | `data.Q("user", "name").AsString()` |
+| Type assertion | `value, ok := v.(string)` | `data.AsString()` (safe) |
+| Check existence | Complex nested checks | `data.Has("key")` |
+| Modify nested | Manual map/slice operations | `data.SetPath("user.name", "John")` |
+| Load from file | `ioutil.ReadFile` + `json.Unmarshal` | `easyjson.LoadFile("file.json")` |
+| Save to file | `json.Marshal` + `ioutil.WriteFile` | `data.SaveFile("file.json")` |
+
+## Performance
+
+EasyJSON is designed for ease of use while maintaining reasonable performance. For high-performance scenarios where you need maximum speed and minimal allocations, consider using Go's standard `encoding/json` package directly.
+
+EasyJSON trades some performance for significantly improved developer experience and code readability. It's ideal for:
+
+- API servers handling moderate traffic
+- Configuration file processing
+- Data transformation scripts
+- Rapid prototyping
+- Any scenario where code clarity is more important than microsecond-level performance
+
 ## Testing
 
 Run the comprehensive test suite:
@@ -598,6 +909,12 @@ go tool cover -html=coverage.out
 go test -bench=.
 ```
 
+Run with coverage:
+
+```bash
+go test -cover
+```
+
 ## Contributing
 
 1. Fork the repository
@@ -612,6 +929,7 @@ go test -bench=.
 
 This project is licensed under the MIT License - see the LICENSE file for details.
 
+<<<<<<< HEAD
 ## Why Choose EasyJSON?
 
 | Feature | Standard Go | Other Libraries | EasyJSON |
@@ -625,3 +943,7 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 | **Breaking Changes** | Major version bumps | Frequent | Zero (additive only) |
 
 **EasyJSON makes JSON handling in Go more enjoyable than Python, safer than JavaScript, and more productive than any other option!** 🚀
+
+## Examples Repository
+
+For more examples and use cases, check out the [examples directory](./example/main.go) in this repository.
