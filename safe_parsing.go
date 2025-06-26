@@ -21,6 +21,22 @@ type ParseResult struct {
 func ParseSafely(jsonStr string) *ParseResult {
 	result := &ParseResult{}
 
+	// Validate input size
+	if err := validateStringLength(jsonStr); err != nil {
+		result.Error = fmt.Errorf("JSON string too large: %w", err)
+		result.Data = NewObject()
+		result.Suggestions = []string{"Reduce JSON size or increase memory limits"}
+		return result
+	}
+
+	// Validate JSON size estimate
+	if err := validateJSONSize(int64(len(jsonStr))); err != nil {
+		result.Error = fmt.Errorf("JSON exceeds size limits: %w", err)
+		result.Data = NewObject()
+		result.Suggestions = []string{"Reduce JSON size or increase memory limits"}
+		return result
+	}
+
 	if data, err := Loads(jsonStr); err == nil {
 		result.Data = data
 		return result
@@ -70,18 +86,45 @@ func ParseSafely(jsonStr string) *ParseResult {
 // ParseSafelyFrom parses JSON from various sources with safety
 // Usage: result := easyjson.ParseSafelyFrom(reader)
 func ParseSafelyFrom(source interface{}) *ParseResult {
+	// Validate source
+	if source == nil {
+		return &ParseResult{
+			Data:        NewObject(),
+			Error:       fmt.Errorf("source cannot be nil"),
+			Suggestions: []string{"Provide a valid source (string, []byte, or io.Reader)"},
+		}
+	}
+
 	switch s := source.(type) {
 	case string:
 		return ParseSafely(s)
 	case []byte:
+		// Validate byte slice size
+		if err := validateJSONSize(int64(len(s))); err != nil {
+			return &ParseResult{
+				Data:        NewObject(),
+				Error:       fmt.Errorf("byte slice too large: %w", err),
+				Suggestions: []string{"Reduce data size or increase memory limits"},
+			}
+		}
 		return ParseSafely(string(s))
 	case io.Reader:
-		data, err := io.ReadAll(s)
+		// Limit reading to prevent memory exhaustion
+		limitedReader := io.LimitReader(s, MaxJSONSize)
+		data, err := io.ReadAll(limitedReader)
 		if err != nil {
 			return &ParseResult{
 				Data:        NewObject(),
 				Error:       fmt.Errorf("failed to read from source: %v", err),
 				Suggestions: []string{"Check if the reader is valid and contains data"},
+			}
+		}
+		// Check if we hit the size limit
+		if int64(len(data)) >= MaxJSONSize {
+			return &ParseResult{
+				Data:        NewObject(),
+				Error:       fmt.Errorf("data from reader exceeds maximum size limit of %d bytes", MaxJSONSize),
+				Suggestions: []string{"Reduce data size or increase memory limits"},
 			}
 		}
 		return ParseSafely(string(data))
@@ -152,6 +195,11 @@ func ValidateJSONWithDetails(jsonStr string) (bool, error, []string) {
 // FixCommonIssues attempts to fix common JSON formatting issues
 // Usage: fixed := easyjson.FixCommonIssues(brokenJSON)
 func FixCommonIssues(jsonStr string) string {
+	// Validate input size
+	if err := validateStringLength(jsonStr); err != nil {
+		return "{}" // Return empty object for oversized input
+	}
+
 	fixed := jsonStr
 
 	// Fix Python-style booleans
@@ -192,6 +240,16 @@ func isDevelopment() bool {
 // ParseLenient is very forgiving - tries multiple strategies to parse JSON
 // Usage: data := easyjson.ParseLenient(messyJSONString)
 func ParseLenient(jsonStr string) *JSONValue {
+	// Validate input size first
+	if err := validateStringLength(jsonStr); err != nil {
+		return NewObject() // Return empty object for oversized input
+	}
+
+	// Validate JSON size estimate
+	if err := validateJSONSize(int64(len(jsonStr))); err != nil {
+		return NewObject() // Return empty object if too large
+	}
+
 	// Strategy 1: Try as-is
 	if data, err := Loads(jsonStr); err == nil {
 		return data
@@ -205,13 +263,24 @@ func ParseLenient(jsonStr string) *JSONValue {
 	// Strategy 3: Try to extract JSON from a larger string
 	trimmed := strings.TrimSpace(jsonStr)
 	if strings.HasPrefix(trimmed, "{") || strings.HasPrefix(trimmed, "[") {
-		// Find the end of JSON
+		// Validate trimmed string size
+		if err := validateStringLength(trimmed); err != nil {
+			return NewObject()
+		}
+
+		// Find the end of JSON with depth and length limits
 		var depth int
 		var inString bool
 		var escaped bool
 		var end int
+		maxProcessed := 0
 
 		for i, char := range trimmed {
+			// Prevent infinite processing
+			maxProcessed++
+			if maxProcessed > MaxStringLength {
+				break
+			}
 			switch char {
 			case '\\':
 				escaped = !escaped
@@ -223,6 +292,10 @@ func ParseLenient(jsonStr string) *JSONValue {
 			case '{', '[':
 				if !inString {
 					depth++
+					// Prevent excessive nesting
+					if depth > DefaultMaxRecursionDepth {
+						return NewObject()
+					}
 				}
 			case '}', ']':
 				if !inString {

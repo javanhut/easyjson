@@ -11,7 +11,12 @@ import (
 // GetUserInfo extracts user information from various JSON structures
 // Usage: userInfo := data.GetUserInfo()
 func (jv *JSONValue) GetUserInfo() map[string]string {
-	return map[string]string{
+	// Validate input
+	if jv == nil {
+		return map[string]string{}
+	}
+
+	result := map[string]string{
 		"id": jv.TryPaths("id", "user_id", "userId", "ID").AsString(),
 		"name": jv.TryPaths("name", "full_name", "fullName", "username", "display_name").
 			AsString(),
@@ -20,6 +25,15 @@ func (jv *JSONValue) GetUserInfo() map[string]string {
 		"username": jv.TryPaths("username", "user_name", "userName", "login", "handle").AsString(),
 		"phone":    jv.TryPaths("phone", "phone_number", "phoneNumber", "mobile", "tel").AsString(),
 	}
+
+	// Validate string lengths
+	for key, value := range result {
+		if err := validateStringLength(value); err != nil {
+			result[key] = "" // Truncate if too long
+		}
+	}
+
+	return result
 }
 
 // GetPaginationInfo extracts pagination information from various structures
@@ -160,13 +174,36 @@ func (jv *JSONValue) ExtractArrayField(fieldName string) []string {
 func (jv *JSONValue) CountByField(fieldName string) map[string]int {
 	counts := make(map[string]int)
 
+	// Validate inputs
+	if jv == nil {
+		return counts
+	}
+	if err := validateStringKey(fieldName); err != nil {
+		return counts
+	}
 	if !jv.IsArray() {
 		return counts
 	}
 
-	for _, item := range jv.AsArray() {
+	// Validate array size
+	if err := validateArraySize(jv.Len()); err != nil {
+		return counts
+	}
+
+	for i, item := range jv.AsArray() {
+		// Validate array bounds during iteration
+		if err := validateArrayIndex(i, jv.Len()); err != nil {
+			continue
+		}
+		if item == nil {
+			continue
+		}
 		value := item.GetString(fieldName)
 		if value != "" {
+			// Validate string length
+			if err := validateStringLength(value); err != nil {
+				continue
+			}
 			counts[value]++
 		}
 	}
@@ -414,9 +451,26 @@ func (jv *JSONValue) GetFinancialInfo() map[string]string {
 // HasRequiredFields checks if all specified fields exist and are not empty
 // Usage: if data.HasRequiredFields("name", "email", "phone") { ... }
 func (jv *JSONValue) HasRequiredFields(fields ...string) bool {
+	// Validate inputs
+	if jv == nil {
+		return false
+	}
+	if len(fields) == 0 {
+		return true
+	}
+
+	// Validate batch size
+	if err := validateBatchSize(len(fields)); err != nil {
+		return false
+	}
+
 	for _, field := range fields {
+		// Validate field name
+		if err := validateStringKey(field); err != nil {
+			return false
+		}
 		value := jv.TryPaths(field)
-		if value.IsEmptyOrNull() {
+		if value == nil || value.IsEmptyOrNull() {
 			return false
 		}
 	}
@@ -483,8 +537,17 @@ func (jv *JSONValue) GetCompletionScore(objectType string) float64 {
 // SanitizeForOutput cleans data for safe output (removes sensitive fields)
 // Usage: safe := data.SanitizeForOutput()
 func (jv *JSONValue) SanitizeForOutput() *JSONValue {
+	// Validate input
+	if jv == nil {
+		return NewObject()
+	}
 	if !jv.IsObject() {
 		return jv
+	}
+
+	// Validate object size
+	if err := validateObjectKeyCount(jv.Len()); err != nil {
+		return NewObject()
 	}
 
 	sensitiveFields := []string{
@@ -505,18 +568,46 @@ func (jv *JSONValue) SanitizeForOutput() *JSONValue {
 		}
 	}
 
-	// Recursively clean nested objects
+	// Recursively clean nested objects with depth protection
 	for _, key := range cleaned.Keys() {
+		// Validate key
+		if err := validateStringKey(key); err != nil {
+			continue
+		}
 		child := cleaned.Get(key)
+		if child == nil {
+			continue
+		}
 		if child.IsObject() {
-			cleaned.Set(key, child.SanitizeForOutput().Raw())
+			// Recursively clean with validation
+			sanitized := child.SanitizeForOutput()
+			if sanitized != nil {
+				cleaned.Set(key, sanitized.Raw())
+			}
 		} else if child.IsArray() {
+			// Validate array size before processing
+			if err := validateArraySize(child.Len()); err != nil {
+				continue
+			}
 			// Clean array items if they're objects
 			cleanedArray := make([]interface{}, 0)
 			for i := 0; i < child.Len(); i++ {
+				// Validate array bounds
+				if err := validateArrayIndex(i, child.Len()); err != nil {
+					break
+				}
 				item := child.Get(i)
+				if item == nil {
+					cleanedArray = append(cleanedArray, nil)
+					continue
+				}
 				if item.IsObject() {
-					cleanedArray = append(cleanedArray, item.SanitizeForOutput().Raw())
+					sanitized := item.SanitizeForOutput()
+					if sanitized != nil {
+						cleanedArray = append(cleanedArray, sanitized.Raw())
+					} else {
+						cleanedArray = append(cleanedArray, nil)
+					}
 				} else {
 					cleanedArray = append(cleanedArray, item.Raw())
 				}

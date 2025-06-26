@@ -75,6 +75,11 @@ func (jv *JSONValue) Dump() ([]byte, error) {
 
 // Get retrieves a value by key (for objects) or index (for arrays)
 func (jv *JSONValue) Get(key interface{}) *JSONValue {
+	// Validate key
+	if err := validateKey(key); err != nil {
+		return &JSONValue{data: nil}
+	}
+
 	switch v := jv.data.(type) {
 	case map[string]interface{}:
 		if keyStr, ok := key.(string); ok {
@@ -84,9 +89,11 @@ func (jv *JSONValue) Get(key interface{}) *JSONValue {
 		}
 	case []interface{}:
 		if keyInt, ok := key.(int); ok {
-			if keyInt >= 0 && keyInt < len(v) {
-				return &JSONValue{data: v[keyInt]}
+			// Validate array index
+			if err := validateArrayIndex(keyInt, len(v)); err != nil {
+				return &JSONValue{data: nil}
 			}
+			return &JSONValue{data: v[keyInt]}
 		}
 	}
 	return &JSONValue{data: nil}
@@ -94,6 +101,15 @@ func (jv *JSONValue) Get(key interface{}) *JSONValue {
 
 // Set sets a value by key (for objects) or index (for arrays)
 func (jv *JSONValue) Set(key interface{}, value interface{}) error {
+	// Validate inputs
+	if err := validateKey(key); err != nil {
+		return fmt.Errorf("invalid key: %w", err)
+	}
+	
+	if err := validateJSONValueType(value); err != nil {
+		return fmt.Errorf("invalid value type: %w", err)
+	}
+
 	switch v := jv.data.(type) {
 	case map[string]interface{}:
 		if keyStr, ok := key.(string); ok {
@@ -103,11 +119,22 @@ func (jv *JSONValue) Set(key interface{}, value interface{}) error {
 		return fmt.Errorf("key must be string for object")
 	case []interface{}:
 		if keyInt, ok := key.(int); ok {
-			if keyInt >= 0 && keyInt < len(v) {
-				v[keyInt] = value
-				return nil
+			if keyInt < 0 {
+				return fmt.Errorf("negative array index not allowed")
 			}
-			return fmt.Errorf("index out of range")
+			// Validate array index for insertion
+			if err := validateArrayIndexForInsertion(keyInt); err != nil {
+				return fmt.Errorf("invalid array index: %w", err)
+			}
+			// Resize array if necessary
+			if keyInt >= len(v) {
+				newSlice := make([]interface{}, keyInt+1)
+				copy(newSlice, v)
+				jv.data = newSlice
+				v = newSlice
+			}
+			v[keyInt] = value
+			return nil
 		}
 		return fmt.Errorf("key must be int for array")
 	default:
@@ -142,14 +169,19 @@ func (jv *JSONValue) Delete(key interface{}) error {
 		return fmt.Errorf("key must be string for object")
 	case []interface{}:
 		if keyInt, ok := key.(int); ok {
-			if keyInt >= 0 && keyInt < len(v) {
-				// Remove element at index
-				copy(v[keyInt:], v[keyInt+1:])
-				v = v[:len(v)-1]
-				jv.data = v
-				return nil
+			if keyInt < 0 || keyInt >= len(v) {
+				return fmt.Errorf("index out of range: %d", keyInt)
 			}
-			return fmt.Errorf("index out of range")
+			// Create new slice to avoid slice behavior issues
+			newSlice := make([]interface{}, 0, len(v)-1)
+			// Copy elements before the deleted index
+			newSlice = append(newSlice, v[:keyInt]...)
+			// Copy elements after the deleted index
+			if keyInt < len(v)-1 {
+				newSlice = append(newSlice, v[keyInt+1:]...)
+			}
+			jv.data = newSlice
+			return nil
 		}
 		return fmt.Errorf("key must be int for array")
 	default:
@@ -375,21 +407,91 @@ func (jv *JSONValue) Update(other *JSONValue) error {
 
 // Clone creates a deep copy of the JSONValue
 func (jv *JSONValue) Clone() *JSONValue {
-	bytes, err := json.Marshal(jv.data)
-	if err != nil {
-		return &JSONValue{data: nil}
+	return &JSONValue{data: jv.deepClone(jv.data)}
+}
+
+// deepClone performs a deep copy of the data without JSON marshal/unmarshal
+func (jv *JSONValue) deepClone(data interface{}) interface{} {
+	if data == nil {
+		return nil
 	}
 
-	var cloned interface{}
-	if err := json.Unmarshal(bytes, &cloned); err != nil {
-		return &JSONValue{data: nil}
+	switch v := data.(type) {
+	case map[string]interface{}:
+		cloned := make(map[string]interface{}, len(v))
+		for key, value := range v {
+			cloned[key] = jv.deepClone(value)
+		}
+		return cloned
+		
+	case []interface{}:
+		cloned := make([]interface{}, len(v))
+		for i, value := range v {
+			cloned[i] = jv.deepClone(value)
+		}
+		return cloned
+		
+	case map[interface{}]interface{}:
+		// Handle generic maps
+		cloned := make(map[interface{}]interface{}, len(v))
+		for key, value := range v {
+			cloned[key] = jv.deepClone(value)
+		}
+		return cloned
+		
+	case []string:
+		// Handle string slices
+		cloned := make([]string, len(v))
+		copy(cloned, v)
+		return cloned
+		
+	case []int:
+		// Handle int slices
+		cloned := make([]int, len(v))
+		copy(cloned, v)
+		return cloned
+		
+	case []float64:
+		// Handle float64 slices
+		cloned := make([]float64, len(v))
+		copy(cloned, v)
+		return cloned
+		
+	case []bool:
+		// Handle bool slices
+		cloned := make([]bool, len(v))
+		copy(cloned, v)
+		return cloned
+		
+	case string, int, int8, int16, int32, int64,
+		 uint, uint8, uint16, uint32, uint64,
+		 float32, float64, bool:
+		// Primitive types are copied by value
+		return v
+		
+	default:
+		// For other types, try to use JSON as fallback
+		bytes, err := json.Marshal(v)
+		if err != nil {
+			return nil
+		}
+		
+		var cloned interface{}
+		if err := json.Unmarshal(bytes, &cloned); err != nil {
+			return nil
+		}
+		
+		return cloned
 	}
-
-	return &JSONValue{data: cloned}
 }
 
 // Path retrieves a nested value using a dot-separated path
 func (jv *JSONValue) Path(path string) *JSONValue {
+	// Validate path
+	if err := validatePath(path); err != nil {
+		return &JSONValue{data: nil}
+	}
+
 	parts := strings.Split(path, ".")
 	current := jv
 
@@ -400,8 +502,18 @@ func (jv *JSONValue) Path(path string) *JSONValue {
 
 		// Try as array index first
 		if index, err := strconv.Atoi(part); err == nil {
+			// Validate array index if we're dealing with an array
+			if current.IsArray() {
+				if err := validateArrayIndex(index, current.Len()); err != nil {
+					return &JSONValue{data: nil}
+				}
+			}
 			current = current.Get(index)
 		} else {
+			// Validate key
+			if err := validateKey(part); err != nil {
+				return &JSONValue{data: nil}
+			}
 			current = current.Get(part)
 		}
 
@@ -415,6 +527,16 @@ func (jv *JSONValue) Path(path string) *JSONValue {
 
 // SetPath sets a nested value using a dot-separated path
 func (jv *JSONValue) SetPath(path string, value interface{}) error {
+	// Validate path
+	if err := validatePath(path); err != nil {
+		return fmt.Errorf("invalid path: %w", err)
+	}
+
+	// Validate value type
+	if err := validateJSONValueType(value); err != nil {
+		return fmt.Errorf("invalid value type: %w", err)
+	}
+
 	parts := strings.Split(path, ".")
 	if len(parts) == 0 {
 		return fmt.Errorf("empty path")
@@ -436,9 +558,10 @@ func (jv *JSONValue) SetPath(path string, value interface{}) error {
 		if next.IsNull() {
 			// Create intermediate objects/arrays as needed
 			if i+1 < len(parts)-1 {
-				if _, err := strconv.Atoi(parts[i+1]); err == nil {
-					// Next part is an array index
-					newArray := make([]interface{}, 0)
+				if nextIndex, err := strconv.Atoi(parts[i+1]); err == nil {
+					// Next part is an array index - create array with proper size
+					arraySize := nextIndex + 1
+					newArray := make([]interface{}, arraySize)
 					current.Set(part, newArray)
 				} else {
 					// Next part is an object key
@@ -446,8 +569,19 @@ func (jv *JSONValue) SetPath(path string, value interface{}) error {
 					current.Set(part, newObj)
 				}
 			} else {
-				newObj := make(map[string]interface{})
-				current.Set(part, newObj)
+				// Last intermediate part - determine type based on final part
+				finalPart := parts[len(parts)-1]
+				if _, err := strconv.Atoi(finalPart); err == nil {
+					// Final part is array index
+					finalIndex, _ := strconv.Atoi(finalPart)
+					arraySize := finalIndex + 1
+					newArray := make([]interface{}, arraySize)
+					current.Set(part, newArray)
+				} else {
+					// Final part is object key
+					newObj := make(map[string]interface{})
+					current.Set(part, newObj)
+				}
 			}
 
 			if index, err := strconv.Atoi(part); err == nil {

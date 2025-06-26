@@ -1,6 +1,8 @@
 package easyjson
 
 import (
+	"reflect"
+	"strings"
 	"time"
 )
 
@@ -26,6 +28,24 @@ func NewArrayBuilder() *JSONBuilder {
 // AddField adds a field to the JSON object
 // Usage: builder.AddField("name", "John")
 func (jb *JSONBuilder) AddField(key string, value interface{}) *JSONBuilder {
+	// Validate inputs
+	if jb == nil || jb.value == nil {
+		return jb
+	}
+	if err := validateStringKey(key); err != nil {
+		return jb
+	}
+	if err := validateJSONValueType(value); err != nil {
+		return jb
+	}
+
+	// Validate object key count
+	if jb.value.IsObject() {
+		if err := validateObjectKeyCount(jb.value.Len() + 1); err != nil {
+			return jb
+		}
+	}
+
 	jb.value.Set(key, value)
 	return jb
 }
@@ -33,7 +53,34 @@ func (jb *JSONBuilder) AddField(key string, value interface{}) *JSONBuilder {
 // AddFields adds multiple fields at once from a map
 // Usage: builder.AddFields(map[string]interface{}{"name": "John", "age": 30})
 func (jb *JSONBuilder) AddFields(fields map[string]interface{}) *JSONBuilder {
+	// Validate inputs
+	if jb == nil || jb.value == nil {
+		return jb
+	}
+	if fields == nil {
+		return jb
+	}
+
+	// Validate batch size
+	if err := validateBatchSize(len(fields)); err != nil {
+		return jb
+	}
+
+	// Validate final object key count
+	if jb.value.IsObject() {
+		if err := validateObjectKeyCount(jb.value.Len() + len(fields)); err != nil {
+			return jb
+		}
+	}
+
 	for key, value := range fields {
+		// Validate each key-value pair
+		if err := validateStringKey(key); err != nil {
+			continue
+		}
+		if err := validateJSONValueType(value); err != nil {
+			continue
+		}
 		jb.value.Set(key, value)
 	}
 	return jb
@@ -42,6 +89,21 @@ func (jb *JSONBuilder) AddFields(fields map[string]interface{}) *JSONBuilder {
 // AddItem adds an item to the JSON array
 // Usage: builder.AddItem("value")
 func (jb *JSONBuilder) AddItem(value interface{}) *JSONBuilder {
+	// Validate inputs
+	if jb == nil || jb.value == nil {
+		return jb
+	}
+	if err := validateJSONValueType(value); err != nil {
+		return jb
+	}
+
+	// Validate array size after addition
+	if jb.value.IsArray() {
+		if err := validateArraySize(jb.value.Len() + 1); err != nil {
+			return jb
+		}
+	}
+
 	jb.value.Append(value)
 	return jb
 }
@@ -49,7 +111,31 @@ func (jb *JSONBuilder) AddItem(value interface{}) *JSONBuilder {
 // AddItems adds multiple items at once
 // Usage: builder.AddItems("item1", "item2", "item3")
 func (jb *JSONBuilder) AddItems(values ...interface{}) *JSONBuilder {
+	// Validate inputs
+	if jb == nil || jb.value == nil {
+		return jb
+	}
+	if len(values) == 0 {
+		return jb
+	}
+
+	// Validate batch size
+	if err := validateBatchSize(len(values)); err != nil {
+		return jb
+	}
+
+	// Validate final array size
+	if jb.value.IsArray() {
+		if err := validateArraySize(jb.value.Len() + len(values)); err != nil {
+			return jb
+		}
+	}
+
 	for _, value := range values {
+		// Validate each value
+		if err := validateJSONValueType(value); err != nil {
+			continue
+		}
 		jb.value.Append(value)
 	}
 	return jb
@@ -58,18 +144,64 @@ func (jb *JSONBuilder) AddItems(values ...interface{}) *JSONBuilder {
 // AddObject adds a nested object using a builder function
 // Usage: builder.AddObject("user", func(user *JSONBuilder) { user.AddField("name", "John") })
 func (jb *JSONBuilder) AddObject(key string, builderFn func(*JSONBuilder)) *JSONBuilder {
+	// Validate inputs
+	if jb == nil || jb.value == nil {
+		return jb
+	}
+	if err := validateStringKey(key); err != nil {
+		return jb
+	}
+	if builderFn == nil {
+		return jb
+	}
+
+	// Validate object key count
+	if jb.value.IsObject() {
+		if err := validateObjectKeyCount(jb.value.Len() + 1); err != nil {
+			return jb
+		}
+	}
+
 	nested := NewBuilder()
+	if nested == nil {
+		return jb
+	}
 	builderFn(nested)
-	jb.value.Set(key, nested.value.Raw())
+	if nested.value != nil {
+		jb.value.Set(key, nested.value.Raw())
+	}
 	return jb
 }
 
 // AddArray adds a nested array using a builder function
 // Usage: builder.AddArray("items", func(arr *JSONBuilder) { arr.AddItem("item1") })
 func (jb *JSONBuilder) AddArray(key string, builderFn func(*JSONBuilder)) *JSONBuilder {
+	// Validate inputs
+	if jb == nil || jb.value == nil {
+		return jb
+	}
+	if err := validateStringKey(key); err != nil {
+		return jb
+	}
+	if builderFn == nil {
+		return jb
+	}
+
+	// Validate object key count
+	if jb.value.IsObject() {
+		if err := validateObjectKeyCount(jb.value.Len() + 1); err != nil {
+			return jb
+		}
+	}
+
 	nested := NewArrayBuilder()
+	if nested == nil {
+		return jb
+	}
 	builderFn(nested)
-	jb.value.Set(key, nested.value.Raw())
+	if nested.value != nil {
+		jb.value.Set(key, nested.value.Raw())
+	}
 	return jb
 }
 
@@ -120,19 +252,149 @@ func (jb *JSONBuilder) AddISO8601Timestamp(key string) *JSONBuilder {
 	return jb
 }
 
-// AddUserInfo adds common user information fields
+// AddUserInfo adds common user information fields using reflection
 // Usage: builder.AddUserInfo(user)
 func (jb *JSONBuilder) AddUserInfo(user interface{}) *JSONBuilder {
-	// This is a placeholder - in real implementation, you'd use reflection
-	// or type assertion to extract user fields
+	// Validate inputs
+	if jb == nil || jb.value == nil {
+		return jb
+	}
+	if user == nil {
+		return jb
+	}
+
+	// Handle map[string]interface{} directly
 	if userMap, ok := user.(map[string]interface{}); ok {
-		commonFields := []string{"id", "name", "email", "username", "role"}
+		commonFields := []string{"id", "name", "email", "username", "role", "firstName", "lastName", "displayName"}
 		for _, field := range commonFields {
 			if value, exists := userMap[field]; exists {
 				jb.value.Set(field, value)
 			}
 		}
+		return jb
 	}
+
+	// Use reflection for structs and other types
+	v := reflect.ValueOf(user)
+	if v.Kind() == reflect.Ptr {
+		if v.IsNil() {
+			return jb
+		}
+		v = v.Elem()
+	}
+
+	if v.Kind() != reflect.Struct {
+		return jb
+	}
+
+	t := v.Type()
+	commonFields := map[string][]string{
+		"id":          {"id", "ID", "Id", "UserID", "UserId"},
+		"name":        {"name", "Name", "FullName", "DisplayName"},
+		"email":       {"email", "Email", "EmailAddress"},
+		"username":    {"username", "Username", "UserName", "Login"},
+		"role":        {"role", "Role", "UserRole"},
+		"firstName":   {"firstName", "FirstName", "first_name"},
+		"lastName":    {"lastName", "LastName", "last_name"},
+		"displayName": {"displayName", "DisplayName", "display_name"},
+	}
+
+	for jsonField, structFields := range commonFields {
+		for _, structField := range structFields {
+			if field := v.FieldByName(structField); field.IsValid() && field.CanInterface() {
+				// Handle different field types
+				var value interface{}
+				switch field.Kind() {
+				case reflect.String:
+					if str := field.String(); str != "" {
+						value = str
+					}
+				case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+					if num := field.Int(); num != 0 {
+						value = num
+					}
+				case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+					if num := field.Uint(); num != 0 {
+						value = num
+					}
+				case reflect.Float32, reflect.Float64:
+					if num := field.Float(); num != 0 {
+						value = num
+					}
+				case reflect.Bool:
+					value = field.Bool()
+				case reflect.Interface:
+					if !field.IsNil() {
+						value = field.Interface()
+					}
+				default:
+					// Try to get the interface value for other types
+					if field.CanInterface() {
+						iface := field.Interface()
+						// Only add non-zero values
+						if !reflect.DeepEqual(iface, reflect.Zero(field.Type()).Interface()) {
+							value = iface
+						}
+					}
+				}
+
+				if value != nil {
+					jb.value.Set(jsonField, value)
+					break // Found a match, move to next JSON field
+				}
+			}
+		}
+
+		// Also check for json tags
+		for i := 0; i < t.NumField(); i++ {
+			structField := t.Field(i)
+			if tag := structField.Tag.Get("json"); tag != "" {
+				tagName := strings.Split(tag, ",")[0]
+				if tagName == jsonField && tagName != "-" {
+					field := v.Field(i)
+					if field.IsValid() && field.CanInterface() {
+						var value interface{}
+						switch field.Kind() {
+						case reflect.String:
+							if str := field.String(); str != "" {
+								value = str
+							}
+						case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+							if num := field.Int(); num != 0 {
+								value = num
+							}
+						case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+							if num := field.Uint(); num != 0 {
+								value = num
+							}
+						case reflect.Float32, reflect.Float64:
+							if num := field.Float(); num != 0 {
+								value = num
+							}
+						case reflect.Bool:
+							value = field.Bool()
+						case reflect.Interface:
+							if !field.IsNil() {
+								value = field.Interface()
+							}
+						default:
+							if field.CanInterface() {
+								iface := field.Interface()
+								if !reflect.DeepEqual(iface, reflect.Zero(field.Type()).Interface()) {
+									value = iface
+								}
+							}
+						}
+
+						if value != nil {
+							jb.value.Set(jsonField, value)
+						}
+					}
+				}
+			}
+		}
+	}
+
 	return jb
 }
 
@@ -169,10 +431,33 @@ func (jb *JSONBuilder) AddError(code, message string, details interface{}) *JSON
 // Merge merges another JSONValue into this builder
 // Usage: builder.Merge(otherJSONValue)
 func (jb *JSONBuilder) Merge(other *JSONValue) *JSONBuilder {
-	if other.IsObject() {
-		for key, value := range other.AsObject() {
-			jb.value.Set(key, value.Raw())
+	// Validate inputs
+	if jb == nil || jb.value == nil {
+		return jb
+	}
+	if other == nil {
+		return jb
+	}
+	if !other.IsObject() {
+		return jb
+	}
+
+	// Validate object key count after merge
+	if jb.value.IsObject() {
+		if err := validateObjectKeyCount(jb.value.Len() + other.Len()); err != nil {
+			return jb
 		}
+	}
+
+	for key, value := range other.AsObject() {
+		// Validate each key during merge
+		if err := validateStringKey(key); err != nil {
+			continue
+		}
+		if value == nil {
+			continue
+		}
+		jb.value.Set(key, value.Raw())
 	}
 	return jb
 }
@@ -180,6 +465,13 @@ func (jb *JSONBuilder) Merge(other *JSONValue) *JSONBuilder {
 // When allows conditional building
 // Usage: builder.When(condition, func(b *JSONBuilder) { b.AddField("extra", "data") })
 func (jb *JSONBuilder) When(condition bool, fn func(*JSONBuilder)) *JSONBuilder {
+	// Validate inputs
+	if jb == nil || jb.value == nil {
+		return jb
+	}
+	if fn == nil {
+		return jb
+	}
 	if condition {
 		fn(jb)
 	}
@@ -258,13 +550,33 @@ func (jb *JSONBuilder) Reset() *JSONBuilder {
 // QuickObject creates object with key-value pairs
 // Usage: obj := easyjson.QuickObject("name", "John", "age", 30)
 func QuickObject(pairs ...interface{}) *JSONValue {
+	// Validate inputs
+	if len(pairs) == 0 {
+		return NewObject()
+	}
 	if len(pairs)%2 != 0 {
 		return NewObject() // Return empty on odd number
 	}
 
+	// Validate batch size
+	if err := validateBatchSize(len(pairs) / 2); err != nil {
+		return NewObject()
+	}
+
 	builder := NewBuilder()
+	if builder == nil {
+		return NewObject()
+	}
+
 	for i := 0; i < len(pairs); i += 2 {
 		if key, ok := pairs[i].(string); ok {
+			// Validate key and value
+			if err := validateStringKey(key); err != nil {
+				continue
+			}
+			if err := validateJSONValueType(pairs[i+1]); err != nil {
+				continue
+			}
 			builder.AddField(key, pairs[i+1])
 		}
 	}
@@ -274,8 +586,33 @@ func QuickObject(pairs ...interface{}) *JSONValue {
 // QuickArray creates array with items
 // Usage: arr := easyjson.QuickArray("item1", "item2", "item3")
 func QuickArray(items ...interface{}) *JSONValue {
+	// Validate inputs
+	if len(items) == 0 {
+		return NewArray()
+	}
+
+	// Validate batch size
+	if err := validateBatchSize(len(items)); err != nil {
+		return NewArray()
+	}
+
+	// Validate array size
+	if err := validateArraySize(len(items)); err != nil {
+		return NewArray()
+	}
+
 	builder := NewArrayBuilder()
-	builder.AddItems(items...)
+	if builder == nil {
+		return NewArray()
+	}
+
+	// Validate each item
+	for _, item := range items {
+		if err := validateJSONValueType(item); err != nil {
+			continue
+		}
+		builder.AddItem(item)
+	}
 	return builder.ToJSON()
 }
 

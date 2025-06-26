@@ -1,15 +1,39 @@
 package easyjson
 
+import (
+	"sort"
+	"strings"
+)
+
 // array_operations.go - Enhanced array operations
 
 // FindInArray searches array for item matching the predicate
 // Usage: data.Get("users").FindInArray(func(user *JSONValue) bool { return user.GetString("role") == "admin" })
 func (jv *JSONValue) FindInArray(matchFn func(*JSONValue) bool) *JSONValue {
+	// Validate inputs
+	if jv == nil {
+		return &JSONValue{data: nil}
+	}
+	if matchFn == nil {
+		return &JSONValue{data: nil}
+	}
 	if !jv.IsArray() {
 		return &JSONValue{data: nil}
 	}
 
-	for _, item := range jv.AsArray() {
+	// Validate array size
+	if err := validateArraySize(jv.Len()); err != nil {
+		return &JSONValue{data: nil}
+	}
+
+	for i, item := range jv.AsArray() {
+		// Validate array bounds during iteration
+		if err := validateArrayIndex(i, jv.Len()); err != nil {
+			continue
+		}
+		if item == nil {
+			continue
+		}
 		if matchFn(item) {
 			return item
 		}
@@ -20,8 +44,25 @@ func (jv *JSONValue) FindInArray(matchFn func(*JSONValue) bool) *JSONValue {
 // FindByField finds first array item where field equals value
 // Usage: data.Get("users").FindByField("id", 123)
 func (jv *JSONValue) FindByField(fieldName string, value interface{}) *JSONValue {
+	// Validate inputs
+	if jv == nil {
+		return &JSONValue{data: nil}
+	}
+	if err := validateStringKey(fieldName); err != nil {
+		return &JSONValue{data: nil}
+	}
+	if err := validateJSONValueType(value); err != nil {
+		return &JSONValue{data: nil}
+	}
+
 	return jv.FindInArray(func(item *JSONValue) bool {
+		if item == nil {
+			return false
+		}
 		field := item.Get(fieldName)
+		if field == nil {
+			return false
+		}
 		switch v := value.(type) {
 		case string:
 			return field.AsString() == v
@@ -39,13 +80,38 @@ func (jv *JSONValue) FindByField(fieldName string, value interface{}) *JSONValue
 // FindAllByField finds all array items where field equals value
 // Usage: data.Get("users").FindAllByField("role", "admin")
 func (jv *JSONValue) FindAllByField(fieldName string, value interface{}) []*JSONValue {
+	// Validate inputs
+	if jv == nil {
+		return []*JSONValue{}
+	}
+	if err := validateStringKey(fieldName); err != nil {
+		return []*JSONValue{}
+	}
+	if err := validateJSONValueType(value); err != nil {
+		return []*JSONValue{}
+	}
 	if !jv.IsArray() {
 		return []*JSONValue{}
 	}
 
+	// Validate array size
+	if err := validateArraySize(jv.Len()); err != nil {
+		return []*JSONValue{}
+	}
+
 	var results []*JSONValue
-	for _, item := range jv.AsArray() {
+	for i, item := range jv.AsArray() {
+		// Validate array bounds during iteration
+		if err := validateArrayIndex(i, jv.Len()); err != nil {
+			continue
+		}
+		if item == nil {
+			continue
+		}
 		field := item.Get(fieldName)
+		if field == nil {
+			continue
+		}
 		match := false
 		switch v := value.(type) {
 		case string:
@@ -67,12 +133,31 @@ func (jv *JSONValue) FindAllByField(fieldName string, value interface{}) []*JSON
 // FilterArray returns new JSONValue with filtered array items
 // Usage: data.Get("users").FilterArray(func(user *JSONValue) bool { return user.GetBool("active") })
 func (jv *JSONValue) FilterArray(filterFn func(*JSONValue) bool) *JSONValue {
+	// Validate inputs
+	if jv == nil {
+		return NewArray()
+	}
+	if filterFn == nil {
+		return NewArray()
+	}
 	if !jv.IsArray() {
 		return NewArray()
 	}
 
+	// Validate array size
+	if err := validateArraySize(jv.Len()); err != nil {
+		return NewArray()
+	}
+
 	var filtered []interface{}
-	for _, item := range jv.AsArray() {
+	for i, item := range jv.AsArray() {
+		// Validate array bounds during iteration
+		if err := validateArrayIndex(i, jv.Len()); err != nil {
+			continue
+		}
+		if item == nil {
+			continue
+		}
 		if filterFn(item) {
 			filtered = append(filtered, item.Raw())
 		}
@@ -84,13 +169,39 @@ func (jv *JSONValue) FilterArray(filterFn func(*JSONValue) bool) *JSONValue {
 // MapArray transforms array items and returns new JSONValue
 // Usage: data.Get("users").MapArray(func(user *JSONValue) interface{} { return user.GetString("name") })
 func (jv *JSONValue) MapArray(mapFn func(*JSONValue) interface{}) *JSONValue {
+	// Validate inputs
+	if jv == nil {
+		return NewArray()
+	}
+	if mapFn == nil {
+		return NewArray()
+	}
 	if !jv.IsArray() {
 		return NewArray()
 	}
 
+	// Validate array size
+	if err := validateArraySize(jv.Len()); err != nil {
+		return NewArray()
+	}
+
 	var mapped []interface{}
-	for _, item := range jv.AsArray() {
-		mapped = append(mapped, mapFn(item))
+	for i, item := range jv.AsArray() {
+		// Validate array bounds during iteration
+		if err := validateArrayIndex(i, jv.Len()); err != nil {
+			continue
+		}
+		if item == nil {
+			mapped = append(mapped, nil)
+			continue
+		}
+		result := mapFn(item)
+		// Validate the mapped result type
+		if err := validateJSONValueType(result); err != nil {
+			mapped = append(mapped, nil)
+			continue
+		}
+		mapped = append(mapped, result)
 	}
 
 	return &JSONValue{data: mapped}
@@ -102,12 +213,31 @@ func (jv *JSONValue) ReduceArray(
 	initial interface{},
 	reduceFn func(interface{}, *JSONValue) interface{},
 ) interface{} {
+	// Validate inputs
+	if jv == nil {
+		return initial
+	}
+	if reduceFn == nil {
+		return initial
+	}
 	if !jv.IsArray() {
 		return initial
 	}
 
+	// Validate array size
+	if err := validateArraySize(jv.Len()); err != nil {
+		return initial
+	}
+
 	accumulator := initial
-	for _, item := range jv.AsArray() {
+	for i, item := range jv.AsArray() {
+		// Validate array bounds during iteration
+		if err := validateArrayIndex(i, jv.Len()); err != nil {
+			continue
+		}
+		if item == nil {
+			continue
+		}
 		accumulator = reduceFn(accumulator, item)
 	}
 	return accumulator
@@ -116,11 +246,27 @@ func (jv *JSONValue) ReduceArray(
 // ForEach executes function for each array item
 // Usage: data.Get("users").ForEach(func(i int, user *JSONValue) { fmt.Printf("%d: %s\n", i, user.GetString("name")) })
 func (jv *JSONValue) ForEach(fn func(int, *JSONValue)) {
+	// Validate inputs
+	if jv == nil {
+		return
+	}
+	if fn == nil {
+		return
+	}
 	if !jv.IsArray() {
 		return
 	}
 
+	// Validate array size
+	if err := validateArraySize(jv.Len()); err != nil {
+		return
+	}
+
 	for i, item := range jv.AsArray() {
+		// Validate array bounds during iteration
+		if err := validateArrayIndex(i, jv.Len()); err != nil {
+			continue
+		}
 		fn(i, item)
 	}
 }
@@ -128,11 +274,30 @@ func (jv *JSONValue) ForEach(fn func(int, *JSONValue)) {
 // Some checks if at least one array item matches predicate
 // Usage: data.Get("users").Some(func(user *JSONValue) bool { return user.GetString("role") == "admin" })
 func (jv *JSONValue) Some(predicateFn func(*JSONValue) bool) bool {
+	// Validate inputs
+	if jv == nil {
+		return false
+	}
+	if predicateFn == nil {
+		return false
+	}
 	if !jv.IsArray() {
 		return false
 	}
 
-	for _, item := range jv.AsArray() {
+	// Validate array size
+	if err := validateArraySize(jv.Len()); err != nil {
+		return false
+	}
+
+	for i, item := range jv.AsArray() {
+		// Validate array bounds during iteration
+		if err := validateArrayIndex(i, jv.Len()); err != nil {
+			continue
+		}
+		if item == nil {
+			continue
+		}
 		if predicateFn(item) {
 			return true
 		}
@@ -143,11 +308,30 @@ func (jv *JSONValue) Some(predicateFn func(*JSONValue) bool) bool {
 // Every checks if all array items match predicate
 // Usage: data.Get("users").Every(func(user *JSONValue) bool { return user.GetBool("active") })
 func (jv *JSONValue) Every(predicateFn func(*JSONValue) bool) bool {
+	// Validate inputs
+	if jv == nil {
+		return false
+	}
+	if predicateFn == nil {
+		return false
+	}
 	if !jv.IsArray() {
 		return false
 	}
 
-	for _, item := range jv.AsArray() {
+	// Validate array size
+	if err := validateArraySize(jv.Len()); err != nil {
+		return false
+	}
+
+	for i, item := range jv.AsArray() {
+		// Validate array bounds during iteration
+		if err := validateArrayIndex(i, jv.Len()); err != nil {
+			return false
+		}
+		if item == nil {
+			return false
+		}
 		if !predicateFn(item) {
 			return false
 		}
@@ -166,12 +350,32 @@ func (jv *JSONValue) Pluck(fieldName string) *JSONValue {
 // PluckStrings extracts string field from all array items
 // Usage: data.Get("users").PluckStrings("name") - returns []string of names
 func (jv *JSONValue) PluckStrings(fieldName string) []string {
+	// Validate inputs
+	if jv == nil {
+		return []string{}
+	}
+	if err := validateStringKey(fieldName); err != nil {
+		return []string{}
+	}
 	if !jv.IsArray() {
 		return []string{}
 	}
 
+	// Validate array size
+	if err := validateArraySize(jv.Len()); err != nil {
+		return []string{}
+	}
+
 	var results []string
-	for _, item := range jv.AsArray() {
+	for i, item := range jv.AsArray() {
+		// Validate array bounds during iteration
+		if err := validateArrayIndex(i, jv.Len()); err != nil {
+			continue
+		}
+		if item == nil {
+			results = append(results, "")
+			continue
+		}
 		results = append(results, item.GetString(fieldName))
 	}
 	return results
@@ -180,12 +384,32 @@ func (jv *JSONValue) PluckStrings(fieldName string) []string {
 // PluckInts extracts integer field from all array items
 // Usage: data.Get("users").PluckInts("age") - returns []int of ages
 func (jv *JSONValue) PluckInts(fieldName string) []int {
+	// Validate inputs
+	if jv == nil {
+		return []int{}
+	}
+	if err := validateStringKey(fieldName); err != nil {
+		return []int{}
+	}
 	if !jv.IsArray() {
 		return []int{}
 	}
 
+	// Validate array size
+	if err := validateArraySize(jv.Len()); err != nil {
+		return []int{}
+	}
+
 	var results []int
-	for _, item := range jv.AsArray() {
+	for i, item := range jv.AsArray() {
+		// Validate array bounds during iteration
+		if err := validateArrayIndex(i, jv.Len()); err != nil {
+			continue
+		}
+		if item == nil {
+			results = append(results, 0)
+			continue
+		}
 		results = append(results, item.GetInt(fieldName))
 	}
 	return results
@@ -196,11 +420,30 @@ func (jv *JSONValue) PluckInts(fieldName string) []int {
 func (jv *JSONValue) GroupBy(fieldName string) map[string][]*JSONValue {
 	groups := make(map[string][]*JSONValue)
 
+	// Validate inputs
+	if jv == nil {
+		return groups
+	}
+	if err := validateStringKey(fieldName); err != nil {
+		return groups
+	}
 	if !jv.IsArray() {
 		return groups
 	}
 
-	for _, item := range jv.AsArray() {
+	// Validate array size
+	if err := validateArraySize(jv.Len()); err != nil {
+		return groups
+	}
+
+	for i, item := range jv.AsArray() {
+		// Validate array bounds during iteration
+		if err := validateArrayIndex(i, jv.Len()); err != nil {
+			continue
+		}
+		if item == nil {
+			continue
+		}
 		key := item.GetString(fieldName)
 		groups[key] = append(groups[key], item)
 	}
@@ -217,25 +460,20 @@ func (jv *JSONValue) SortBy(fieldName string) *JSONValue {
 
 	items := jv.AsArray()
 
-	// Simple bubble sort for now (can be optimized later)
-	n := len(items)
-	sorted := make([]*JSONValue, n)
+	// Efficient sort using Go's sort.Slice
+	sorted := make([]*JSONValue, len(items))
 	copy(sorted, items)
 
-	for i := 0; i < n-1; i++ {
-		for j := 0; j < n-i-1; j++ {
-			val1 := sorted[j].GetString(fieldName)
-			val2 := sorted[j+1].GetString(fieldName)
-			if val1 > val2 {
-				sorted[j], sorted[j+1] = sorted[j+1], sorted[j]
-			}
-		}
-	}
+	sort.Slice(sorted, func(i, j int) bool {
+		val1 := sorted[i].GetString(fieldName)
+		val2 := sorted[j].GetString(fieldName)
+		return strings.ToLower(val1) < strings.ToLower(val2) // Case-insensitive sort
+	})
 
 	// Convert back to interface{} slice
-	var result []interface{}
-	for _, item := range sorted {
-		result = append(result, item.Raw())
+	result := make([]interface{}, len(sorted))
+	for i, item := range sorted {
+		result[i] = item.Raw()
 	}
 
 	return &JSONValue{data: result}
@@ -284,7 +522,19 @@ func (jv *JSONValue) Last() *JSONValue {
 // Take returns first N items from array
 // Usage: data.Get("users").Take(5) - first 5 users
 func (jv *JSONValue) Take(n int) *JSONValue {
+	// Validate inputs
+	if jv == nil {
+		return NewArray()
+	}
+	if n < 0 {
+		return NewArray()
+	}
 	if !jv.IsArray() {
+		return NewArray()
+	}
+
+	// Validate array size
+	if err := validateArraySize(jv.Len()); err != nil {
 		return NewArray()
 	}
 
@@ -293,9 +543,23 @@ func (jv *JSONValue) Take(n int) *JSONValue {
 		n = length
 	}
 
+	// Validate the take size
+	if err := validateArraySize(n); err != nil {
+		return NewArray()
+	}
+
 	var taken []interface{}
 	for i := 0; i < n; i++ {
-		taken = append(taken, jv.Get(i).Raw())
+		// Validate array bounds during iteration
+		if err := validateArrayIndex(i, length); err != nil {
+			break
+		}
+		item := jv.Get(i)
+		if item != nil {
+			taken = append(taken, item.Raw())
+		} else {
+			taken = append(taken, nil)
+		}
 	}
 
 	return &JSONValue{data: taken}
@@ -304,7 +568,19 @@ func (jv *JSONValue) Take(n int) *JSONValue {
 // Skip returns array without first N items
 // Usage: data.Get("users").Skip(10) - all users except first 10
 func (jv *JSONValue) Skip(n int) *JSONValue {
+	// Validate inputs
+	if jv == nil {
+		return NewArray()
+	}
+	if n < 0 {
+		return NewArray()
+	}
 	if !jv.IsArray() {
+		return NewArray()
+	}
+
+	// Validate array size
+	if err := validateArraySize(jv.Len()); err != nil {
 		return NewArray()
 	}
 
@@ -313,9 +589,23 @@ func (jv *JSONValue) Skip(n int) *JSONValue {
 		return NewArray()
 	}
 
+	// Validate the skip index
+	if err := validateArrayIndex(n, length); err != nil {
+		return NewArray()
+	}
+
 	var remaining []interface{}
 	for i := n; i < length; i++ {
-		remaining = append(remaining, jv.Get(i).Raw())
+		// Validate array bounds during iteration
+		if err := validateArrayIndex(i, length); err != nil {
+			break
+		}
+		item := jv.Get(i)
+		if item != nil {
+			remaining = append(remaining, item.Raw())
+		} else {
+			remaining = append(remaining, nil)
+		}
 	}
 
 	return &JSONValue{data: remaining}
